@@ -14,6 +14,11 @@
 static ZevPhone phone; static ZevJvm jvm; static HWND window_handle;
 static HBITMAP display_bitmap; static HDC display_dc; static uint32_t *display_pixels;
 
+static void startup_error(const char *message)
+{
+    MessageBoxA(NULL, message, "zevMobile startup error", MB_OK | MB_ICONERROR);
+}
+
 static int init_display_bitmap(void)
 {
     BITMAPINFO info; memset(&info,0,sizeof(info)); info.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);
@@ -30,12 +35,25 @@ static void draw_phone(HDC dc){RECT c;GetClientRect(window_handle,&c);int sw=c.r
 static LRESULT CALLBACK window_proc(HWND hwnd,UINT message,WPARAM wparam,LPARAM lparam){(void)lparam;switch(message){case WM_ERASEBKGND:return 1;case WM_PAINT:{PAINTSTRUCT ps;HDC dc=BeginPaint(hwnd,&ps);draw_phone(dc);EndPaint(hwnd,&ps);return 0;}case WM_KEYDOWN:switch(wparam){case VK_UP:zev_phone_key(&phone,ZEV_KEY_UP);break;case VK_DOWN:zev_phone_key(&phone,ZEV_KEY_DOWN);break;case VK_LEFT:zev_phone_key(&phone,ZEV_KEY_LEFT);break;case VK_RIGHT:zev_phone_key(&phone,ZEV_KEY_RIGHT);break;case VK_RETURN:zev_phone_key(&phone,ZEV_KEY_OK);break;case VK_ESCAPE:zev_phone_key(&phone,ZEV_KEY_BACK);break;default:return 0;}sync_display();return 0;case WM_TIMER:zev_phone_tick(&phone);zev_kernel_tick(&phone);return 0;case WM_DESTROY:destroy_display_bitmap();PostQuitMessage(0);return 0;default:return DefWindowProcA(hwnd,message,wparam,lparam);}}
 int WINAPI WinMain(HINSTANCE instance,HINSTANCE previous,LPSTR command_line,int show)
 {
-    (void)previous;(void)command_line;zev_phone_init(&phone);zev_kernel_boot(&phone);zev_jvm_init(&jvm,&phone);
-    printf("zevMobile JVM: loading Launcher.class (%zu bytes)\n",zev_launcher_class.size);
-    if(zev_jvm_load_class(&jvm,zev_launcher_class)!=0||zev_jvm_run_class(&jvm,zev_launcher_class)!=0){fprintf(stderr,"zevMobile JVM: Launcher.class failed\n");return 1;}
-    if(GetFileAttributesA("assets\\startup.wav")!=INVALID_FILE_ATTRIBUTES)PlaySoundA("assets\\startup.wav",NULL,SND_FILENAME|SND_ASYNC|SND_NODEFAULT);
+    (void)previous;(void)command_line;
+
     WNDCLASSA wc={0};wc.lpfnWndProc=window_proc;wc.hInstance=instance;wc.hCursor=LoadCursor(NULL,IDC_ARROW);wc.hbrBackground=NULL;wc.lpszClassName="ZevMobileEmulator";
-    if(!RegisterClassA(&wc))return 1;window_handle=CreateWindowExA(0,wc.lpszClassName,"zevMobile Emulator",WS_OVERLAPPEDWINDOW,CW_USEDEFAULT,CW_USEDEFAULT,WINDOW_W,WINDOW_H,NULL,NULL,instance,NULL);
-    if(!window_handle)return 1;if(!init_display_bitmap()){DestroyWindow(window_handle);return 1;}ShowWindow(window_handle,show);UpdateWindow(window_handle);sync_display();SetTimer(window_handle,1,16,NULL);
+    if(!RegisterClassA(&wc)){startup_error("RegisterClassA failed.");return 1;}
+    window_handle=CreateWindowExA(0,wc.lpszClassName,"zevMobile Emulator",WS_OVERLAPPEDWINDOW,CW_USEDEFAULT,CW_USEDEFAULT,WINDOW_W,WINDOW_H,NULL,NULL,instance,NULL);
+    if(!window_handle){startup_error("CreateWindowExA failed.");return 1;}
+    ShowWindow(window_handle,show);UpdateWindow(window_handle);
+
+    zev_phone_init(&phone);
+    zev_kernel_boot(&phone);
+    zev_jvm_init(&jvm,&phone);
+
+    printf("zevMobile JVM: loading Launcher.class (%zu bytes)\n",zev_launcher_class.size);
+    if(zev_jvm_load_class(&jvm,zev_launcher_class)!=0){startup_error("JVM failed to load Launcher.class.");DestroyWindow(window_handle);return 1;}
+    if(zev_jvm_run_class(&jvm,zev_launcher_class)!=0){startup_error("JVM failed to run Launcher.class.");DestroyWindow(window_handle);return 1;}
+
+    if(!init_display_bitmap()){startup_error("Failed to create the display framebuffer.");DestroyWindow(window_handle);return 1;}
+    if(GetFileAttributesA("assets\\startup.wav")!=INVALID_FILE_ATTRIBUTES)PlaySoundA("assets\\startup.wav",NULL,SND_FILENAME|SND_ASYNC|SND_NODEFAULT);
+    sync_display();SetTimer(window_handle,1,16,NULL);
+
     MSG message;while(GetMessageA(&message,NULL,0,0)>0){TranslateMessage(&message);DispatchMessageA(&message);}return(int)message.wParam;
 }
