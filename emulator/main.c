@@ -1,6 +1,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <stdint.h>
+#include <string.h>
 #include "phone.h"
 #include "../kernel/kernel.h"
 
@@ -9,7 +10,50 @@
 
 static ZevPhone phone;
 static HWND window_handle;
-static BITMAPINFO bitmap_info;
+static HBITMAP display_bitmap;
+static HDC display_dc;
+static uint32_t *display_pixels;
+
+static int init_display_bitmap(void)
+{
+    BITMAPINFO info;
+    memset(&info, 0, sizeof(info));
+    info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    info.bmiHeader.biWidth = ZEV_SCREEN_WIDTH;
+    info.bmiHeader.biHeight = -ZEV_SCREEN_HEIGHT;
+    info.bmiHeader.biPlanes = 1;
+    info.bmiHeader.biBitCount = 32;
+    info.bmiHeader.biCompression = BI_RGB;
+
+    HDC window_dc = GetDC(window_handle);
+    if (!window_dc) return 0;
+
+    display_dc = CreateCompatibleDC(window_dc);
+    display_bitmap = CreateDIBSection(window_dc, &info, DIB_RGB_COLORS,
+                                      (void **)&display_pixels, NULL, 0);
+    ReleaseDC(window_handle, window_dc);
+
+    if (!display_dc || !display_bitmap || !display_pixels) {
+        if (display_bitmap) DeleteObject(display_bitmap);
+        if (display_dc) DeleteDC(display_dc);
+        display_bitmap = NULL;
+        display_dc = NULL;
+        display_pixels = NULL;
+        return 0;
+    }
+
+    SelectObject(display_dc, display_bitmap);
+    return 1;
+}
+
+static void destroy_display_bitmap(void)
+{
+    if (display_bitmap) DeleteObject(display_bitmap);
+    if (display_dc) DeleteDC(display_dc);
+    display_bitmap = NULL;
+    display_dc = NULL;
+    display_pixels = NULL;
+}
 
 static void draw_phone(HDC dc)
 {
@@ -29,9 +73,13 @@ static void draw_phone(HDC dc)
     screen_h = (int)(ZEV_SCREEN_HEIGHT * scale);
     screen_x = (client.right - screen_w) / 2;
 
-    StretchDIBits(dc, screen_x, screen_y, screen_w, screen_h,
-                  0, 0, ZEV_SCREEN_WIDTH, ZEV_SCREEN_HEIGHT,
-                  phone.framebuffer, &bitmap_info, DIB_RGB_COLORS, SRCCOPY);
+    if (display_pixels && display_dc) {
+        memcpy(display_pixels, phone.framebuffer, sizeof(phone.framebuffer));
+        SetStretchBltMode(dc, COLORONCOLOR);
+        StretchBlt(dc, screen_x, screen_y, screen_w, screen_h,
+                   display_dc, 0, 0, ZEV_SCREEN_WIDTH, ZEV_SCREEN_HEIGHT,
+                   SRCCOPY);
+    }
 
     SetBkMode(dc, TRANSPARENT);
     SetTextColor(dc, RGB(80, 80, 80));
@@ -69,6 +117,7 @@ static LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM wparam, LPAR
         InvalidateRect(hwnd, NULL, FALSE);
         return 0;
     case WM_DESTROY:
+        destroy_display_bitmap();
         PostQuitMessage(0);
         return 0;
     default:
@@ -84,13 +133,6 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPSTR command_line, i
     zev_phone_init(&phone);
     zev_kernel_boot(&phone);
 
-    bitmap_info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-    bitmap_info.bmiHeader.biWidth = ZEV_SCREEN_WIDTH;
-    bitmap_info.bmiHeader.biHeight = -ZEV_SCREEN_HEIGHT;
-    bitmap_info.bmiHeader.biPlanes = 1;
-    bitmap_info.bmiHeader.biBitCount = 32;
-    bitmap_info.bmiHeader.biCompression = BI_RGB;
-
     WNDCLASSA wc = {0};
     wc.lpfnWndProc = window_proc;
     wc.hInstance = instance;
@@ -104,6 +146,11 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPSTR command_line, i
         WINDOW_W, WINDOW_H, NULL, NULL, instance, NULL);
 
     if (!window_handle) return 1;
+
+    if (!init_display_bitmap()) {
+        DestroyWindow(window_handle);
+        return 1;
+    }
 
     ShowWindow(window_handle, show);
     UpdateWindow(window_handle);
