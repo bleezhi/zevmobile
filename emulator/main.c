@@ -31,8 +31,8 @@ int WINAPI WinMain(HINSTANCE instance,HINSTANCE previous,LPSTR command_line,int 
     ShowWindow(window_handle,show);UpdateWindow(window_handle);
     zev_phone_init(&phone);zev_kernel_boot(&phone);zev_jvm_init(&jvm,&phone);
     printf("zevMobile JVM: loading Launcher.class (%zu bytes)\n",zev_launcher_class.size);
-    if(zev_jvm_load_class(&jvm,zev_launcher_class)!=0){startup_error("JVM failed to load Launcher.class.");DestroyWindow(window_handle);return 1;}
-    if(zev_jvm_run_class(&jvm,zev_launcher_class)!=0){startup_error("JVM failed to run Launcher.class.");DestroyWindow(window_handle);return 1;}
+    if(zev_jvm_load_class(&jvm,zev_launcher_class)!=0){char msg[256];snprintf(msg,sizeof(msg),"JVM failed to load Launcher.class.\n\nError %d: %s",jvm.last_error,zev_jvm_error_string(jvm.last_error));startup_error(msg);DestroyWindow(window_handle);return 1;}
+    if(zev_jvm_run_class(&jvm,zev_launcher_class)!=0){char msg[256];snprintf(msg,sizeof(msg),"JVM failed to run Launcher.class.\n\nError %d: %s",jvm.last_error,zev_jvm_error_string(jvm.last_error));startup_error(msg);DestroyWindow(window_handle);return 1;}
     if(!init_display_bitmap()){startup_error("Failed to create the display framebuffer.");DestroyWindow(window_handle);return 1;}
     if(GetFileAttributesA("assets\\startup.wav")!=INVALID_FILE_ATTRIBUTES)PlaySoundA("assets\\startup.wav",NULL,SND_FILENAME|SND_ASYNC|SND_NODEFAULT);
     sync_display();SetTimer(window_handle,1,16,NULL);
