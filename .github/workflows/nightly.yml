@@ -29,7 +29,14 @@ jobs:
             kernel/kernel.c kernel/fs.c kernel/process.c kernel/syscall.c \
             jvm/jvm.c jvm/launcher_class.c \
             -o build/zevmobile.exe \
-            -mwindows -lgdi32 -luser32 -lwinmm
+            -mwindows -static -static-libgcc -static-libstdc++ -lgdi32 -luser32 -lwinmm
+      - name: Verify EXE
+        shell: pwsh
+        run: |
+          if (-not (Test-Path build/zevmobile.exe)) { throw "EXE was not produced" }
+          $size = (Get-Item build/zevmobile.exe).Length
+          Write-Host "zevMobile EXE size: $size bytes"
+          if ($size -lt 100000) { throw "EXE is unexpectedly small" }
       - name: Reset nightly release
         shell: pwsh
         env:
