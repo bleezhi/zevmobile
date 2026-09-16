@@ -1,0 +1,52 @@
+name: Stable Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (for example 0.1.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+
+      - name: Build zevMobile
+        shell: msys2 {0}
+        run: |
+          mkdir -p build
+          gcc -std=c11 -Wall -Wextra -O2 \
+            emulator/main.c \
+            emulator/phone.c \
+            kernel/kernel.c \
+            -o build/zevmobile.exe \
+            -mwindows -lgdi32 -luser32
+
+      - name: Create stable release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          $tag = "v$env:VERSION"
+          gh release create $tag `
+            build/zevmobile.exe `
+            --title "zevMobile $tag" `
+            --notes "Stable zevMobile release $tag." `
+            --latest
