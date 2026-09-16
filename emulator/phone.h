@@ -29,6 +29,13 @@ typedef enum {
     ZEV_KEY_9
 } ZevKey;
 
+typedef enum {
+    ZEV_UI_BOOT = 0,
+    ZEV_UI_HOME,
+    ZEV_UI_APPS,
+    ZEV_UI_ABOUT
+} ZevUiScreen;
+
 typedef struct {
     uint32_t ram_size;
     uint32_t flash_size;
@@ -43,6 +50,12 @@ typedef struct {
     uint32_t framebuffer[ZEV_SCREEN_WIDTH * ZEV_SCREEN_HEIGHT];
     ZevKey last_key;
     uint64_t ticks;
+    uint8_t battery;
+    uint8_t signal;
+    uint8_t selected_app;
+    uint8_t boot_frame;
+    ZevUiScreen screen;
+    uint32_t notification_ticks;
 } ZevPhone;
 
 void zev_phone_init(ZevPhone *phone);
@@ -50,5 +63,6 @@ void zev_phone_tick(ZevPhone *phone);
 void zev_phone_clear_screen(ZevPhone *phone, uint32_t pixel);
 void zev_phone_set_pixel(ZevPhone *phone, int x, int y, uint32_t pixel);
 void zev_phone_key(ZevPhone *phone, ZevKey key);
+void zev_phone_draw(ZevPhone *phone);
 
 #endif
