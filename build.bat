@@ -29,6 +29,9 @@ gcc -std=c11 -Wall -Wextra -O2 ^
     emulator\main.c ^
     emulator\phone.c ^
     kernel\kernel.c ^
+    kernel\fs.c ^
+    kernel\process.c ^
+    kernel\syscall.c ^
     -o build\zevmobile.exe ^
     -mwindows -lgdi32 -luser32
 
