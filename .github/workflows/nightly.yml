@@ -35,14 +35,25 @@ jobs:
             -o build/zevmobile.exe \
             -mwindows -lgdi32 -luser32
 
-      - name: Create nightly release
+      - name: Reset tags and create nightly release
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $tag = "nightly-${{ github.run_number }}"
-          gh release create $tag `
+          # Remove every existing tag so nightly is the only tag left.
+          $tags = gh api --paginate repos/${{ github.repository }}/git/refs/tags --jq '.[].ref'
+          foreach ($ref in ($tags -split "`n")) {
+            if ($ref.Trim()) {
+              gh api --method DELETE repos/${{ github.repository }}/git/$ref
+            }
+          }
+
+          # Remove the previous nightly release if it exists.
+          gh release delete nightly --yes --cleanup-tag 2>$null
+
+          # Create the single rolling nightly tag/release.
+          gh release create nightly `
             build/zevmobile.exe `
-            --title "zevMobile Nightly ${{ github.run_number }}" `
+            --title "zevMobile Nightly" `
             --notes "Automated nightly build from commit ${{ github.sha }}." `
             --prerelease
