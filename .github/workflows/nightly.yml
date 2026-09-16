@@ -2,8 +2,7 @@ name: Nightly Build
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
 
 permissions:
   contents: write
@@ -11,11 +10,9 @@ permissions:
 jobs:
   build-and-release:
     runs-on: windows-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Set up MSYS2
         uses: msys2/setup-msys2@v2
         with:
@@ -23,37 +20,28 @@ jobs:
           update: true
           install: >-
             mingw-w64-ucrt-x86_64-gcc
-
       - name: Build zevMobile
         shell: msys2 {0}
         run: |
           mkdir -p build
           gcc -std=c11 -Wall -Wextra -O2 \
-            emulator/main.c \
-            emulator/phone.c \
-            kernel/kernel.c \
-            kernel/fs.c \
-            kernel/process.c \
-            kernel/syscall.c \
+            emulator/main.c emulator/phone.c \
+            kernel/kernel.c kernel/fs.c kernel/process.c kernel/syscall.c \
+            jvm/jvm.c jvm/launcher_class.c \
             -o build/zevmobile.exe \
-            -mwindows -lgdi32 -luser32
-
-      - name: Reset tags and create nightly release
+            -mwindows -lgdi32 -luser32 -lwinmm
+      - name: Reset nightly release
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $tags = gh api --paginate repos/${{ github.repository }}/git/refs/tags --jq '.[].ref'
-          foreach ($ref in ($tags -split "`n")) {
-            if ($ref.Trim()) {
-              gh api --method DELETE repos/${{ github.repository }}/git/$ref
-            }
-          }
-
           gh release delete nightly --yes --cleanup-tag 2>$null
-
-          gh release create nightly `
-            build/zevmobile.exe `
+          for ($i = 0; $i -lt 20; $i++) {
+            gh release view nightly 2>$null
+            if ($LASTEXITCODE -ne 0) { break }
+            Start-Sleep -Seconds 1
+          }
+          gh release create nightly build/zevmobile.exe `
             --title "zevMobile Nightly" `
             --notes "Automated nightly build from commit ${{ github.sha }}." `
             --prerelease
