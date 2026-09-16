@@ -32,6 +32,9 @@ jobs:
             emulator/main.c \
             emulator/phone.c \
             kernel/kernel.c \
+            kernel/fs.c \
+            kernel/process.c \
+            kernel/syscall.c \
             -o build/zevmobile.exe \
             -mwindows -lgdi32 -luser32
 
@@ -40,7 +43,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # Remove every existing tag so nightly is the only tag left.
           $tags = gh api --paginate repos/${{ github.repository }}/git/refs/tags --jq '.[].ref'
           foreach ($ref in ($tags -split "`n")) {
             if ($ref.Trim()) {
@@ -48,10 +50,8 @@ jobs:
             }
           }
 
-          # Remove the previous nightly release if it exists.
           gh release delete nightly --yes --cleanup-tag 2>$null
 
-          # Create the single rolling nightly tag/release.
           gh release create nightly `
             build/zevmobile.exe `
             --title "zevMobile Nightly" `
