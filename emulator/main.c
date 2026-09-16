@@ -43,6 +43,7 @@ static int init_display_bitmap(void)
     }
 
     SelectObject(display_dc, display_bitmap);
+    memcpy(display_pixels, phone.framebuffer, sizeof(phone.framebuffer));
     return 1;
 }
 
@@ -59,7 +60,6 @@ static void draw_phone(HDC dc)
 {
     RECT client;
     GetClientRect(window_handle, &client);
-    FillRect(dc, &client, (HBRUSH)(COLOR_WINDOW + 1));
 
     int screen_w = client.right - 80;
     int screen_h = client.bottom - 90;
@@ -73,8 +73,10 @@ static void draw_phone(HDC dc)
     screen_h = (int)(ZEV_SCREEN_HEIGHT * scale);
     screen_x = (client.right - screen_w) / 2;
 
+    /* Only repaint the background when Windows actually asks us to paint. */
+    FillRect(dc, &client, (HBRUSH)(COLOR_WINDOW + 1));
+
     if (display_pixels && display_dc) {
-        memcpy(display_pixels, phone.framebuffer, sizeof(phone.framebuffer));
         SetStretchBltMode(dc, COLORONCOLOR);
         StretchBlt(dc, screen_x, screen_y, screen_w, screen_h,
                    display_dc, 0, 0, ZEV_SCREEN_WIDTH, ZEV_SCREEN_HEIGHT,
@@ -92,6 +94,10 @@ static LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM wparam, LPAR
     (void)lparam;
 
     switch (message) {
+    case WM_ERASEBKGND:
+        /* Prevent Windows from erasing the window before every WM_PAINT. */
+        return 1;
+
     case WM_PAINT: {
         PAINTSTRUCT ps;
         HDC dc = BeginPaint(hwnd, &ps);
@@ -99,6 +105,7 @@ static LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM wparam, LPAR
         EndPaint(hwnd, &ps);
         return 0;
     }
+
     case WM_KEYDOWN:
         switch (wparam) {
         case VK_UP: zev_phone_key(&phone, ZEV_KEY_UP); break;
@@ -107,19 +114,27 @@ static LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM wparam, LPAR
         case VK_RIGHT: zev_phone_key(&phone, ZEV_KEY_RIGHT); break;
         case VK_RETURN: zev_phone_key(&phone, ZEV_KEY_OK); break;
         case VK_ESCAPE: zev_phone_key(&phone, ZEV_KEY_BACK); break;
-        default: break;
+        default: return 0;
+        }
+
+        /* Input is a real visual event, so request one repaint. */
+        if (display_pixels) {
+            memcpy(display_pixels, phone.framebuffer, sizeof(phone.framebuffer));
         }
         InvalidateRect(hwnd, NULL, FALSE);
         return 0;
+
     case WM_TIMER:
         zev_phone_tick(&phone);
         zev_kernel_tick(&phone);
-        InvalidateRect(hwnd, NULL, FALSE);
+        /* Do NOT invalidate every 16 ms. Repaint only when the UI changes. */
         return 0;
+
     case WM_DESTROY:
         destroy_display_bitmap();
         PostQuitMessage(0);
         return 0;
+
     default:
         return DefWindowProcA(hwnd, message, wparam, lparam);
     }
@@ -137,6 +152,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPSTR command_line, i
     wc.lpfnWndProc = window_proc;
     wc.hInstance = instance;
     wc.hCursor = LoadCursor(NULL, IDC_ARROW);
+    wc.hbrBackground = NULL;
     wc.lpszClassName = "ZevMobileEmulator";
 
     if (!RegisterClassA(&wc)) return 1;
