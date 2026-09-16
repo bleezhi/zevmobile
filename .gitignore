@@ -1,0 +1,22 @@
+# Build output
+build/
+out/
+bin/
+*.o
+*.class
+*.jar
+
+# Emulator/runtime data
+*.img
+*.flash
+*.sav
+
+# IDE/editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
