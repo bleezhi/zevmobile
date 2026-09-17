@@ -102,8 +102,6 @@ static int invoke_static(const Class*c,const uint8_t*d,uint16_t mr,int32_t*stack
     if(nt>=c->count||c->cp[nt].tag!=12)return-1;
     uint16_t desc=c->cp[nt].b;
     if(desc>=c->count||c->cp[desc].tag!=1)return-1;
-    /* This first interpreter supports the small native API used by Launcher:
-       zero-argument calls and println(String). */
     if(cp_utf_eq(c,d,desc,"()V")) return native_call(c,d,mr,0,NULL);
     if(cp_utf_eq(c,d,desc,"(Ljava/lang/String;)V")){
         if(*sp<1)return-1;
@@ -128,4 +126,57 @@ int jvm_run(const uint8_t*d,size_t n){
         free(c.cp);return-10;
     }
     free(c.cp);return 0;
+}
+
+/* Public JVM facade used by the Windows emulator. */
+int zev_jvm_init(ZevJvm *jvm, ZevPhone *phone){
+    if(!jvm)return-1;
+    memset(jvm,0,sizeof(*jvm));
+    jvm->phone=phone;
+    return 0;
+}
+
+int zev_jvm_load_class(ZevJvm *jvm, ZevClassImage image){
+    if(!jvm||!image.data||image.size==0){if(jvm)jvm->last_error=-1;return-1;}
+    Class c={0};
+    int rc=parse_class(image.data,image.size,&c);
+    if(rc){jvm->last_error=rc;return rc;}
+    free(c.cp);
+    jvm->loaded_class=image;
+    jvm->last_error=0;
+    return 0;
+}
+
+int zev_jvm_run_main(ZevJvm *jvm){
+    if(!jvm||!jvm->loaded_class.data){if(jvm)jvm->last_error=-1;return-1;}
+    jvm->running=1;
+    int rc=jvm_run(jvm->loaded_class.data,jvm->loaded_class.size);
+    jvm->running=0;
+    jvm->exit_code=rc;
+    jvm->last_error=rc;
+    return rc;
+}
+
+int zev_jvm_run_class(ZevJvm *jvm, ZevClassImage image){
+    int rc=zev_jvm_load_class(jvm,image);
+    if(rc)return rc;
+    return zev_jvm_run_main(jvm);
+}
+
+const char *zev_jvm_error_string(int error){
+    switch(error){
+        case 0:return "success";
+        case -1:return "invalid JVM or class image";
+        case -2:return "out of memory";
+        case -3:return "truncated class file";
+        case -4:return "invalid Code attribute";
+        case -5:return "unsupported constant-pool tag";
+        case -6:return "main method has no bytecode";
+        case -7:return "main([Ljava/lang/String;)V not found";
+        case -8:return "invalid ldc constant";
+        case -9:return "unsupported invokespecial target";
+        case -10:return "unsupported or malformed bytecode";
+        case -11:return "operand stack overflow";
+        default:return "unknown JVM error";
+    }
 }
