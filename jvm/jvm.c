@@ -50,8 +50,6 @@ static int parse(Class *c,const uint8_t *d,size_t n){
                 c->cp[i].a=r16(&p);
                 break;
             case 9:case 10:case 11:case 12:case 17:case 18:
-                /* CONSTANT_Dynamic (17) and CONSTANT_InvokeDynamic (18)
-                   have the same four-byte payload as the other ref entries. */
                 if(p+4>e)return-4;
                 c->cp[i].a=r16(&p);c->cp[i].b=r16(&p);
                 break;
@@ -61,6 +59,7 @@ static int parse(Class *c,const uint8_t *d,size_t n){
                 r16(&p);
                 break;
             default:
+                fprintf(stderr,"JVM: unsupported constant-pool tag %u at entry #%u\n",(unsigned)t,(unsigned)i);
                 return-5;
         }
     }
@@ -90,7 +89,6 @@ static int parse(Class *c,const uint8_t *d,size_t n){
 static int find_main(Class*c,const uint8_t*d,Code*out){
     const uint8_t*p=c->method_data;
     for(uint16_t i=0;i<c->methods;i++){
-        if(p+8>d+0x7fffffff)return-4;
         r16(&p);uint16_t ni=r16(&p),di=r16(&p),ac=r16(&p);
         Code code={0};
         for(uint16_t j=0;j<ac;j++){
