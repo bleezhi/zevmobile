@@ -16,7 +16,7 @@ static HBITMAP display_bitmap; static HDC display_dc; static uint32_t *display_p
 static FILE *startup_log;
 
 static void log_line(const char *message){
-    if(!startup_log) startup_log=fopen("zevmobile.log","w");
+    if(!startup_log) startup_log=fopen("zevmobile.log","a");
     if(startup_log){fprintf(startup_log,"%s\n",message);fflush(startup_log);}
 }
 
@@ -24,6 +24,16 @@ static void log_jvm_result(const char *stage,int rc){
     char line[512];
     snprintf(line,sizeof(line),"%s: rc=%d (%s)",stage,rc,zev_jvm_error_string(rc));
     log_line(line);
+}
+
+static LONG WINAPI startup_exception_filter(EXCEPTION_POINTERS *info){
+    char line[256];
+    DWORD code=info&&info->ExceptionRecord?info->ExceptionRecord->ExceptionCode:0;
+    snprintf(line,sizeof(line),"NATIVE CRASH: Windows exception 0x%08lX",(unsigned long)code);
+    log_line(line);
+    log_line("The JVM/emulator terminated before returning normally. See this log for the last completed stage.");
+    MessageBoxA(NULL,"zevMobile hit a native Windows exception during startup.\n\nCheck zevmobile.log for the exception code and last completed stage.","zevMobile native crash",MB_OK|MB_ICONERROR);
+    return EXCEPTION_EXECUTE_HANDLER;
 }
 
 static void startup_error(const char *message){
@@ -37,11 +47,12 @@ static void destroy_display_bitmap(void){if(display_bitmap)DeleteObject(display_
 static void sync_display(void){if(display_pixels)memcpy(display_pixels,phone.framebuffer,sizeof(phone.framebuffer));if(window_handle)InvalidateRect(window_handle,NULL,FALSE);}
 static void draw_phone(HDC dc){RECT c;GetClientRect(window_handle,&c);int sw=c.right-80,sh=c.bottom-90;double sx=(double)sw/ZEV_SCREEN_WIDTH,sy=(double)sh/ZEV_SCREEN_HEIGHT,s=sx<sy?sx:sy;sw=(int)(ZEV_SCREEN_WIDTH*s);sh=(int)(ZEV_SCREEN_HEIGHT*s);int x=(c.right-sw)/2;FillRect(dc,&c,(HBRUSH)(COLOR_WINDOW+1));if(display_pixels&&display_dc){SetStretchBltMode(dc,COLORONCOLOR);StretchBlt(dc,x,25,sw,sh,display_dc,0,0,ZEV_SCREEN_WIDTH,ZEV_SCREEN_HEIGHT,SRCCOPY);}SetBkMode(dc,TRANSPARENT);SetTextColor(dc,RGB(80,80,80));TextOutA(dc,10,c.bottom-28,"Arrow keys + Enter + Esc | 0-9",27);}
 static void send_key(WPARAM wparam){ZevKey key=ZEV_KEY_NONE;switch(wparam){case VK_UP:key=ZEV_KEY_UP;break;case VK_DOWN:key=ZEV_KEY_DOWN;break;case VK_LEFT:key=ZEV_KEY_LEFT;break;case VK_RIGHT:key=ZEV_KEY_RIGHT;break;case VK_RETURN:key=ZEV_KEY_OK;break;case VK_ESCAPE:key=ZEV_KEY_BACK;break;case '0':key=ZEV_KEY_0;break;case '1':key=ZEV_KEY_1;break;case '2':key=ZEV_KEY_2;break;case '3':key=ZEV_KEY_3;break;case '4':key=ZEV_KEY_4;break;case '5':key=ZEV_KEY_5;break;case '6':key=ZEV_KEY_6;break;case '7':key=ZEV_KEY_7;break;case '8':key=ZEV_KEY_8;break;case '9':key=ZEV_KEY_9;break;default:return;}zev_phone_key(&phone,key);sync_display();}
-static LRESULT CALLBACK window_proc(HWND hwnd,UINT message,WPARAM wparam,LPARAM lparam){(void)lparam;switch(message){case WM_ERASEBKGND:return 1;case WM_PAINT:{PAINTSTRUCT ps;HDC dc=BeginPaint(hwnd,&ps);draw_phone(dc);EndPaint(hwnd,&ps);return 0;}case WM_KEYDOWN:send_key(wparam);return 0;case WM_TIMER:zev_phone_tick(&phone);zev_kernel_tick(&phone);sync_display();return 0;case WM_DESTROY:destroy_display_bitmap();PostQuitMessage(0);return 0;default:return DefWindowProcA(hwnd,wparam?message:message,wparam,lparam);}}
+static LRESULT CALLBACK window_proc(HWND hwnd,UINT message,WPARAM wparam,LPARAM lparam){(void)lparam;switch(message){case WM_ERASEBKGND:return 1;case WM_PAINT:{PAINTSTRUCT ps;HDC dc=BeginPaint(hwnd,&ps);draw_phone(dc);EndPaint(hwnd,&ps);return 0;}case WM_KEYDOWN:send_key(wparam);return 0;case WM_TIMER:zev_phone_tick(&phone);zev_kernel_tick(&phone);sync_display();return 0;case WM_DESTROY:destroy_display_bitmap();PostQuitMessage(0);return 0;default:return DefWindowProcA(hwnd,message,wparam,lparam);}}
 
 int WINAPI WinMain(HINSTANCE instance,HINSTANCE previous,LPSTR command_line,int show)
 {
     (void)previous;(void)command_line;
+    SetUnhandledExceptionFilter(startup_exception_filter);
     startup_log=fopen("zevmobile.log","w");
     log_line("=== zevMobile startup ===");
     WNDCLASSA wc={0};wc.lpfnWndProc=window_proc;wc.hInstance=instance;wc.hCursor=LoadCursor(NULL,IDC_ARROW);wc.hbrBackground=NULL;wc.lpszClassName="ZevMobileEmulator";
