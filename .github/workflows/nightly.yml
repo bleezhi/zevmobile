@@ -28,13 +28,14 @@ jobs:
             emulator/main.c emulator/phone.c \
             kernel/kernel.c kernel/fs.c kernel/process.c kernel/syscall.c \
             jvm/jvm.c jvm/launcher_class.c \
-            -o build/zevmobile.exe \
+            -o build/zevmobile-${GITHUB_SHA}.exe \
             -mwindows -static -static-libgcc -static-libstdc++ -lgdi32 -luser32 -lwinmm
       - name: Verify EXE
         shell: pwsh
         run: |
-          if (-not (Test-Path build/zevmobile.exe)) { throw "EXE was not produced" }
-          $size = (Get-Item build/zevmobile.exe).Length
+          $exe = "build/zevmobile-${{ github.sha }}.exe"
+          if (-not (Test-Path $exe)) { throw "EXE was not produced: $exe" }
+          $size = (Get-Item $exe).Length
           Write-Host "zevMobile EXE size: $size bytes"
           if ($size -le 0) { throw "EXE is empty" }
       - name: Reset nightly release
@@ -48,7 +49,8 @@ jobs:
             if ($LASTEXITCODE -ne 0) { break }
             Start-Sleep -Seconds 1
           }
-          gh release create nightly build/zevmobile.exe `
-            --title "zevMobile Nightly" `
-            --notes "Automated nightly build from commit ${{ github.sha }}." `
+          $exe = "build/zevmobile-${{ github.sha }}.exe"
+          gh release create nightly $exe `
+            --title "zevMobile Nightly (${{ github.sha }})" `
+            --notes "Automated nightly build from commit ${{ github.sha }}. The asset filename is commit-specific to prevent stale cached binaries." `
             --prerelease
