@@ -10,6 +10,9 @@ typedef struct { uint8_t tag; uint16_t a,b; int32_t off; } Cp;
 typedef struct { const uint8_t *code; uint32_t len; } Code;
 typedef struct { Cp cp[CP_MAX]; uint16_t count, methods; const uint8_t *method_data; } Class;
 
+static uint8_t bad_cp_tag;
+static uint16_t bad_cp_index;
+
 static uint16_t r16(const uint8_t **p){uint16_t v=((uint16_t)(*p)[0]<<8)|(*p)[1];*p+=2;return v;}
 static uint32_t r32(const uint8_t **p){uint32_t v=((uint32_t)(*p)[0]<<24)|((uint32_t)(*p)[1]<<16)|((uint32_t)(*p)[2]<<8)|(*p)[3];*p+=4;return v;}
 static const char *utf(Class *c,const uint8_t *base,uint16_t i){if(!i||i>=c->count||c->cp[i].tag!=1)return NULL;return (const char*)(base+c->cp[i].off);}
@@ -17,6 +20,7 @@ static const char *utf(Class *c,const uint8_t *base,uint16_t i){if(!i||i>=c->cou
 static int parse(Class *c,const uint8_t *d,size_t n){
     const uint8_t*p=d,*e=d+n;
     memset(c,0,sizeof(*c));
+    bad_cp_tag=0;bad_cp_index=0;
     if(n<10||r32(&p)!=0xCAFEBABE)return-2;
     r16(&p);r16(&p);
     c->count=r16(&p);
@@ -59,6 +63,7 @@ static int parse(Class *c,const uint8_t *d,size_t n){
                 r16(&p);
                 break;
             default:
+                bad_cp_tag=t;bad_cp_index=i;
                 fprintf(stderr,"JVM: unsupported constant-pool tag %u at entry #%u\n",(unsigned)t,(unsigned)i);
                 return-5;
         }
@@ -169,4 +174,4 @@ int zev_jvm_init(ZevJvm*j,ZevPhone*p){memset(j,0,sizeof(*j));j->phone=p;return 0
 int zev_jvm_load_class(ZevJvm*j,ZevClassImage im){Class c;int r=parse(&c,im.data,im.size);j->last_error=r;return r;}
 int zev_jvm_run_main(ZevJvm*j){return j->running?0:0;}
 int zev_jvm_run_class(ZevJvm*j,ZevClassImage im){Class c;Code code;int r=parse(&c,im.data,im.size);if(r){j->last_error=r;return r;}r=find_main(&c,im.data,&code);if(r){j->last_error=r;return r;}j->running=1;r=run(j,&c,im.data,code);j->last_error=r;return r;}
-const char *zev_jvm_error_string(int error){switch(error){case 0:return "ok";case -2:return "invalid class magic or truncated header";case -3:return "constant pool too large";case -4:return "truncated class data";case -5:return "unsupported constant-pool tag";case -6:return "main() has no Code body";case -7:return "main([Ljava/lang/String;)V not found";case -8:return "integer division by zero";case -9:return "operand stack underflow or too many arguments";case -10:return "unsupported native method";case -11:return "unsupported JVM opcode";default:return "unknown JVM error";}}
+const char *zev_jvm_error_string(int error){switch(error){case 0:return "ok";case -2:return "invalid class magic or truncated header";case -3:return "constant pool too large";case -4:return "truncated class data";case -5:{static char msg[128];snprintf(msg,sizeof(msg),"unsupported constant-pool tag %u at entry #%u",(unsigned)bad_cp_tag,(unsigned)bad_cp_index);return msg;}case -6:return "main() has no Code body";case -7:return "main([Ljava/lang/String;)V not found";case -8:return "integer division by zero";case -9:return "operand stack underflow or too many arguments";case -10:return "unsupported native method";case -11:return "unsupported JVM opcode";default:return "unknown JVM error";}}
