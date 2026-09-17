@@ -11,15 +11,7 @@ static int utf_eq(const uint8_t *base, uint16_t off, uint16_t len, const char *s
     return (size_t)len == n && memcmp(base + off, s, n) == 0;
 }
 
-static size_t utf_copy(const uint8_t *base, uint16_t off, uint16_t len, char *out, size_t cap){
-    size_t n = len;
-    if (!cap) return 0;
-    if (n >= cap) n = cap - 1;
-    memcpy(out, base + off, n);
-    out[n] = 0;
-    return n;
-}
-
+static void rskip(const uint8_t **p, size_t n){ *p += n; }
 static uint16_t r16(const uint8_t **p){uint16_t v=((uint16_t)(*p)[0]<<8)|(*p)[1];*p+=2;return v;}
 static uint32_t r32(const uint8_t **p){uint32_t v=((uint32_t)(*p)[0]<<24)|((uint32_t)(*p)[1]<<16)|((uint32_t)(*p)[2]<<8)|(*p)[3];*p+=4;return v;}
 
@@ -45,11 +37,11 @@ static int parse_class(const uint8_t *d,size_t n,Class*c){
         }
     }
     r16(&p);r16(&p);r16(&p);r16(&p);
-    uint16_t interfaces=r16(&p);p+=2u*interfaces;
+    uint16_t interfaces=r16(&p);rskip(&p,2u*interfaces);
     uint16_t fields=r16(&p);
     for(uint16_t i=0;i<fields;i++){
         r16(&p);r16(&p);r16(&p);uint16_t ac=r16(&p);
-        for(uint16_t j=0;j<ac;j++){r16(&p);uint32_t z=r32(&p);p+=z;}
+        for(uint16_t j=0;j<ac;j++){r16(&p);uint32_t z=r32(&p);rskip(&p,z);}
     }
     c->methods=r16(&p);c->method_data=p;return 0;
 }
@@ -57,7 +49,7 @@ static int parse_class(const uint8_t *d,size_t n,Class*c){
 static int find_main(Class*c,const uint8_t*d,Code*out){
     const uint8_t*p=c->method_data;
     for(uint16_t i=0;i<c->methods;i++){
-        uint16_t access=r16(&p);(void)access;uint16_t ni=r16(&p),di=r16(&p),ac=r16(&p);
+        r16(&p);uint16_t ni=r16(&p),di=r16(&p),ac=r16(&p);
         Code code={0};
         for(uint16_t j=0;j<ac;j++){
             uint16_t ai=r16(&p);uint32_t z=r32(&p);const uint8_t*a=p;
@@ -86,7 +78,9 @@ static int str_const(const Class*c,const uint8_t*d,uint16_t i,char*out,size_t ca
     if(i==0||i>=c->count||c->cp[i].tag!=8)return-1;
     uint16_t u=c->cp[i].a;
     if(u>=c->count||c->cp[u].tag!=1)return-1;
-    utf_copy(d,c->cp[u].off,c->cp[u].a,out,cap);return 0;
+    size_t n=c->cp[u].a;
+    if(n>=cap)n=cap-1;
+    memcpy(out,d+c->cp[u].off,n);out[n]=0;return 0;
 }
 
 static int native_call(const Class*c,const uint8_t*d,uint16_t mr,int argc,int32_t*args){
@@ -96,9 +90,26 @@ static int native_call(const Class*c,const uint8_t*d,uint16_t mr,int argc,int32_
     uint16_t class_name=c->cp[ci].a,method_name=c->cp[nt].a;
     if(!cp_utf_eq(c,d,class_name,"ZevMobile"))return-1;
     if(cp_utf_eq(c,d,method_name,"boot"))return 0;
-    if(cp_utf_eq(c,d,method_name,"println")&&argc){char s[256];if(str_const(c,d,(uint16_t)args[0],s,sizeof(s))==0)printf("%s\n",s);return 0;}
+    if(cp_utf_eq(c,d,method_name,"println")&&argc==1){char s[256];if(str_const(c,d,(uint16_t)args[0],s,sizeof(s))==0)printf("%s\n",s);return 0;}
     if(cp_utf_eq(c,d,method_name,"setPixel")&&argc>=3)return 0;
     if(cp_utf_eq(c,d,method_name,"exit"))exit(argc?args[0]:0);
+    return-1;
+}
+
+static int invoke_static(const Class*c,const uint8_t*d,uint16_t mr,int32_t*stack,int*sp){
+    if(mr>=c->count||c->cp[mr].tag!=10)return-1;
+    uint16_t nt=c->cp[mr].b;
+    if(nt>=c->count||c->cp[nt].tag!=12)return-1;
+    uint16_t desc=c->cp[nt].b;
+    if(desc>=c->count||c->cp[desc].tag!=1)return-1;
+    /* This first interpreter supports the small native API used by Launcher:
+       zero-argument calls and println(String). */
+    if(cp_utf_eq(c,d,desc,"()V")) return native_call(c,d,mr,0,NULL);
+    if(cp_utf_eq(c,d,desc,"(Ljava/lang/String;)V")){
+        if(*sp<1)return-1;
+        int32_t arg=stack[--*sp];
+        return native_call(c,d,mr,1,&arg);
+    }
     return-1;
 }
 
@@ -108,10 +119,10 @@ int jvm_run(const uint8_t*d,size_t n){
     const uint8_t*p=code.code,*end=p+code.len;int32_t stack[256];int sp=0;
     while(p<end){uint8_t op=*p++;
         if(op==0xb1)break;
-        if(op==0xb8){uint16_t mr=r16(&p);rc=native_call(&c,d,mr,0,NULL);if(rc){free(c.cp);return rc;}continue;}
-        if(op==0x12){uint8_t idx=*p++;if(idx<c.count&&c.cp[idx].tag==8){stack[sp++]=idx;continue;}free(c.cp);return-8;}
-        if(op==0x10){int8_t v=(int8_t)*p++;stack[sp++]=v;continue;}
-        if(op>=0x03&&op<=0x08){stack[sp++]=(int32_t)(op-0x03);continue;}
+        if(op==0xb8){uint16_t mr=r16(&p);rc=invoke_static(&c,d,mr,stack,&sp);if(rc){free(c.cp);return rc;}continue;}
+        if(op==0x12){uint8_t idx=*p++;if(idx<c.count&&c.cp[idx].tag==8){if(sp>=256){free(c.cp);return-11;}stack[sp++]=idx;continue;}free(c.cp);return-8;}
+        if(op==0x10){if(p>=end){free(c.cp);return-10;}int8_t v=(int8_t)*p++;if(sp>=256){free(c.cp);return-11;}stack[sp++]=v;continue;}
+        if(op>=0x03&&op<=0x08){if(sp>=256){free(c.cp);return-11;}stack[sp++]=(int32_t)(op-0x03);continue;}
         if(op==0x57){if(sp)sp--;continue;}
         if(op==0xb7){uint16_t mr=r16(&p);if(mr<c.count&&c.cp[mr].tag==10){uint16_t ci=c.cp[mr].a,nt=c.cp[mr].b;if(ci<c.count&&nt<c.count&&c.cp[ci].tag==7&&c.cp[nt].tag==12){uint16_t cl=c.cp[ci].a,nm=c.cp[nt].a;if(cp_utf_eq(&c,d,cl,"java/lang/Object")&&cp_utf_eq(&c,d,nm,"<init>"))continue;}}free(c.cp);return-9;}
         free(c.cp);return-10;
