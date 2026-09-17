@@ -46,8 +46,20 @@ static int parse_class(const uint8_t*d,size_t n,Class*c){
 static int find_main(Class*c,const uint8_t*d,Code*out){
     stage("find main");const uint8_t*p=c->method_data;
     for(uint16_t i=0;i<c->methods;i++){
-        uint16_t ni=r16(&p),di=r16(&p);(void)r16(&p);uint16_t ac=r16(&p);Code code={0};
-        for(uint16_t j=0;j<ac;j++){uint16_t ai=r16(&p);uint32_t z=r32(&p);const uint8_t*a=p;if(ai<c->count&&c->cp[ai].tag==1&&utf_eq(d,c->cp[ai].off,c->cp[ai].a,"Code")){if(z<12)return-4;r16(&a);r16(&a);uint32_t l=r32(&a);if(l>z-12)return-4;code.code=a;code.len=l;}p+=z;}
+        if(!have(p,d+c->methods*0 /* bounds checked by attribute reads */,8)) return -3;
+        (void)r16(&p);                 /* access_flags */
+        uint16_t ni=r16(&p);           /* name_index */
+        uint16_t di=r16(&p);           /* descriptor_index */
+        uint16_t ac=r16(&p);            /* attributes_count */
+        Code code={0};
+        for(uint16_t j=0;j<ac;j++){
+            if(!have(p,d+c->methods*0,6)) return -3;
+            uint16_t ai=r16(&p);uint32_t z=r32(&p);const uint8_t*a=p;
+            if(ai<c->count&&c->cp[ai].tag==1&&utf_eq(d,c->cp[ai].off,c->cp[ai].a,"Code")){
+                if(z<12)return-4;r16(&a);r16(&a);uint32_t l=r32(&a);if(l>z-12)return-4;code.code=a;code.len=l;
+            }
+            p+=z;
+        }
         if(ni<c->count&&di<c->count&&c->cp[ni].tag==1&&c->cp[di].tag==1&&utf_eq(d,c->cp[ni].off,c->cp[ni].a,"main")&&utf_eq(d,c->cp[di].off,c->cp[di].a,"([Ljava/lang/String;)V")){*out=code;return code.code?0:-6;}
     }return-7;
 }
