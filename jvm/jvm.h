@@ -23,6 +23,7 @@ int zev_jvm_load_class(ZevJvm *jvm, ZevClassImage image);
 int zev_jvm_run_main(ZevJvm *jvm);
 int zev_jvm_run_class(ZevJvm *jvm, ZevClassImage image);
 const char *zev_jvm_error_string(int error);
+const char *zev_jvm_current_stage(void);
 extern const ZevClassImage zev_launcher_class;
 
 #endif
