@@ -5,8 +5,18 @@
 #include <stdint.h>
 #include "../emulator/phone.h"
 
-typedef struct { const uint8_t *data; size_t size; } ZevClassImage;
-typedef struct { ZevPhone *phone; int running; int exit_code; int last_error; } ZevJvm;
+typedef struct {
+    const uint8_t *data;
+    size_t size;
+} ZevClassImage;
+
+typedef struct {
+    ZevPhone *phone;
+    int running;
+    int exit_code;
+    int last_error;
+    ZevClassImage loaded_class;
+} ZevJvm;
 
 int zev_jvm_init(ZevJvm *jvm, ZevPhone *phone);
 int zev_jvm_load_class(ZevJvm *jvm, ZevClassImage image);
